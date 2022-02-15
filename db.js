@@ -1,5 +1,6 @@
 const Sequelize = require('sequelize');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 const { STRING } = Sequelize;
 const config = {
   logging: false,
@@ -39,16 +40,29 @@ User.authenticate = async ({ username, password }) => {
   const user = await User.findOne({
     where: {
       username,
-      password,
+      //password,
     },
   });
-  if (user) {
+  if (bcrypt.compare(password, user.password)) {
     return jwt.sign({ userId: user.id }, process.env.JWT);
   }
+  // Load hash from your password DB.
   const error = Error('bad credentials');
   error.status = 401;
   throw error;
 };
+
+User.beforeCreate(async (user) => {
+  const hashedPassword = await bcrypt.hash(user.password, 2);
+  user.password = hashedPassword;
+});
+
+const Note = conn.define('note', {
+  text: STRING,
+});
+
+User.hasMany(Note);
+Note.belongsTo(User);
 
 const syncAndSeed = async () => {
   await conn.sync({ force: true });
@@ -60,11 +74,29 @@ const syncAndSeed = async () => {
   const [lucy, moe, larry] = await Promise.all(
     credentials.map((credential) => User.create(credential))
   );
+
+  const newNotes = [
+    { text: 'Lucy Im home' },
+    { text: 'moes tavern!' },
+    { text: 'larry david sells crypto' },
+  ];
+  const [lucyNote, moeNote, larryNote] = await Promise.all(
+    newNotes.map((note) => Note.create(note))
+  );
+  await lucy.setNotes(lucyNote);
+  await moe.setNotes(moeNote);
+  await larry.setNotes(larryNote);
+
   return {
     users: {
       lucy,
       moe,
       larry,
+    },
+    notes: {
+      lucyNote,
+      moeNote,
+      larryNote,
     },
   };
 };
@@ -73,5 +105,6 @@ module.exports = {
   syncAndSeed,
   models: {
     User,
+    Note,
   },
 };
